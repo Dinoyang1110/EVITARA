@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>E-VITARA 電動車計算機</title>
+<title>E-VITARA 續航 & 充電計算機</title>
 
 <style>
   body {
@@ -68,7 +68,7 @@
 <div class="card">
   <h1>🚗 E-VITARA 續航＆充電計算機</h1>
 
-  <!-- 馬達 -->
+  <!-- 馬達選擇 -->
   <div class="group">
     <label>驅動形式</label>
     <div class="radio-group">
@@ -83,7 +83,7 @@
     <input type="range" min="0" max="100" value="50" id="battery">
   </div>
 
-  <!-- 續航 -->
+  <!-- 續航結果 -->
   <div class="result">
     🔋 預估可行駛距離
     <div class="highlight" id="rangeResult">— km</div>
@@ -97,6 +97,7 @@
     <input type="range" min="10" max="100" value="80" id="target">
   </div>
 
+  <!-- DC 快充結果 -->
   <div class="result">
     ⚡ DC 快充預估時間
     <div class="highlight" id="chargeResult">—</div>
@@ -105,95 +106,103 @@
       ※ 實際時間依溫度、電量狀況略有差異
     </div>
   </div>
+
+  <!-- AC 慢充結果 -->
+  <!-- AC 慢充結果 -->
+<div class="result">
+  ⚡ AC 7 kW 單相交流充電｜約 9 小時 10% → 100%
+  <div class="highlight" id="acChargeResult">—</div>
+  <div class="note">慢充適合家用 / 夜間充電</div>
+</div>
+
+
 </div>
 
 <script>
-  const BATTERY_CAPACITY = 61;
+const BATTERY_CAPACITY = 61; // kWh
+const AC_FULL_CHARGE_TIME = 9; // 10%→100% 官方9小時
 
-  const CONSUMPTION = {
-    single: 11.82,
-    dual: 13.74
-  };
+const CONSUMPTION = {
+  single: 11.82,
+  dual: 13.74
+};
 
-  const DC_FAST_CHARGE = {
-    start: 10,
-    end: 80,
-    timeMinutes: 45
-  };
+const DC_FAST_CHARGE = {
+  start: 10,
+  end: 80,
+  timeMinutes: 45
+};
 
-  const battery = document.getElementById("battery");
-  const target = document.getElementById("target");
+const battery = document.getElementById("battery");
+const target = document.getElementById("target");
 
-  const batteryText = document.getElementById("batteryText");
-  const targetText = document.getElementById("targetText");
-  const rangeResult = document.getElementById("rangeResult");
-  const chargeResult = document.getElementById("chargeResult");
+const batteryText = document.getElementById("batteryText");
+const targetText = document.getElementById("targetText");
+const rangeResult = document.getElementById("rangeResult");
+const chargeResult = document.getElementById("chargeResult");
+const acChargeResult = document.getElementById("acChargeResult");
 
-  function getMotorType() {
-    return document.querySelector('input[name="motor"]:checked').value;
-  }
+function getMotorType() {
+  return document.querySelector('input[name="motor"]:checked').value;
+}
 
-  function safeNumber(value, fallback = 0) {
-    const num = parseFloat(value);
-    return isNaN(num) ? fallback : num;
-  }
+function safeNumber(value, fallback = 0) {
+  const num = parseFloat(value);
+  return isNaN(num) ? fallback : num;
+}
 
-  function update() {
-    const current = safeNumber(battery.value, 50);
-    const targetValue = safeNumber(target.value, 80);
+function update() {
+  const current = safeNumber(battery.value, 50);
+  const targetValue = safeNumber(target.value, 80);
 
-    batteryText.textContent = current + "%";
-    targetText.textContent = targetValue + "%";
+  batteryText.textContent = current + "%";
+  targetText.textContent = targetValue + "%";
 
-    /* ===== 續航 ===== */
-    const consumption = CONSUMPTION[getMotorType()];
-    const usableEnergy = BATTERY_CAPACITY * (current / 100);
-    const range = usableEnergy / (consumption / 100);
-    rangeResult.textContent =
-      isFinite(range) ? Math.round(range) + " km" : "—";
+  // ===== 續航計算 =====
+  const consumption = CONSUMPTION[getMotorType()];
+  const usableEnergy = BATTERY_CAPACITY * (current / 100);
+  const range = usableEnergy / (consumption / 100);
+  rangeResult.textContent = isFinite(range) ? Math.round(range) + " km" : "—";
 
-    /* ===== DC 快充 ===== */
-    let minutes = 0;
-
-    if (current < 10 && targetValue <= 10) {
-      chargeResult.textContent = "—";
-      return;
-    }
-
-    // 10–80%
+  // ===== DC 快充 =====
+  let dcMinutes = 0;
+  if (current < 10 && targetValue <= 10) {
+    chargeResult.textContent = "—";
+  } else {
     if (current < 80 && targetValue > 10) {
       const start = Math.max(current, 10);
       const end = Math.min(targetValue, 80);
       if (end > start) {
         const ratio = (end - start) / (DC_FAST_CHARGE.end - DC_FAST_CHARGE.start);
-        minutes += ratio * DC_FAST_CHARGE.timeMinutes;
+        dcMinutes += ratio * DC_FAST_CHARGE.timeMinutes;
       }
     }
-
-    // 80–100%
     if (targetValue > 80 && current < targetValue) {
-      const energy =
-        BATTERY_CAPACITY * ((targetValue - Math.max(current, 80)) / 100);
-      minutes += (energy / 30) * 60;
+      const energy = BATTERY_CAPACITY * ((targetValue - Math.max(current, 80)) / 100);
+      dcMinutes += (energy / 30) * 60; // 80%-100%低速補電模擬30kW
     }
-
-    if (!isFinite(minutes) || minutes <= 0) {
-      chargeResult.textContent = "—";
-      return;
-    }
-
-    const h = Math.floor(minutes / 60);
-    const m = Math.round(minutes % 60);
-
-    chargeResult.textContent =
-      h > 0 ? `${h} 小時 ${m} 分` : `${m} 分鐘`;
+    const h = Math.floor(dcMinutes / 60);
+    const m = Math.round(dcMinutes % 60);
+    chargeResult.textContent = h > 0 ? `${h} 小時 ${m} 分` : `${m} 分鐘`;
   }
 
-  document.querySelectorAll("input").forEach(el =>
-    el.addEventListener("input", update)
-  );
+  // ===== AC 官方慢充 =====
+  if (targetValue > current) {
+    const chargePercent = Math.max(0, targetValue - current);
+    const acHours = AC_FULL_CHARGE_TIME * (chargePercent / 90); // 10%→100% = 9小時
+    const h = Math.floor(acHours);
+    const m = Math.round((acHours % 1) * 60);
+    acChargeResult.textContent = h > 0 ? `${h} 小時 ${m} 分` : `${m} 分鐘`;
+  } else {
+    acChargeResult.textContent = "—";
+  }
+}
 
-  update();
+document.querySelectorAll("input").forEach(el =>
+  el.addEventListener("input", update)
+);
+
+update();
 </script>
 
 </body>
