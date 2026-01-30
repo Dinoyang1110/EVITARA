@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>E-VITARA 電動車計算機</title>
+
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 16px;
+  }
+  .card {
+    max-width: 420px;
+    margin: auto;
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  }
+  h1 {
+    font-size: 20px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .group {
+    margin-bottom: 16px;
+  }
+  label {
+    font-size: 14px;
+    display: block;
+    margin-bottom: 6px;
+  }
+  .radio-group {
+    display: flex;
+    gap: 12px;
+    font-size: 14px;
+  }
+  input[type="range"],
+  input[type="number"] {
+    width: 100%;
+  }
+  .result {
+    background: #f1f8ff;
+    border-radius: 12px;
+    padding: 14px;
+    margin-top: 12px;
+    font-size: 15px;
+  }
+  .highlight {
+    font-size: 22px;
+    font-weight: bold;
+    color: #007aff;
+  }
+  .note {
+    font-size: 12px;
+    color: #666;
+    margin-top: 6px;
+    line-height: 1.4;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="card">
+  <h1>🚗 E-VITARA 續航＆充電計算機</h1>
+
+  <!-- 馬達 -->
+  <div class="group">
+    <label>驅動形式</label>
+    <div class="radio-group">
+      <label><input type="radio" name="motor" value="single" checked> 單馬達（516 km）</label>
+      <label><input type="radio" name="motor" value="dual"> 雙馬達（444 km）</label>
+    </div>
+  </div>
+
+  <!-- 剩餘電量 -->
+  <div class="group">
+    <label>剩餘電量：<span id="batteryText">50%</span></label>
+    <input type="range" min="0" max="100" value="50" id="battery">
+  </div>
+
+  <!-- 續航 -->
+  <div class="result">
+    🔋 預估可行駛距離
+    <div class="highlight" id="rangeResult">— km</div>
+  </div>
+
+  <hr style="margin:20px 0">
+
+  <!-- 充電 -->
+  <div class="group">
+    <label>目標充電：<span id="targetText">80%</span></label>
+    <input type="range" min="10" max="100" value="80" id="target">
+  </div>
+
+  <div class="result">
+    ⚡ DC 快充預估時間
+    <div class="highlight" id="chargeResult">—</div>
+    <div class="note">
+      官方標示：DC 快充 10–80% 約 45 分鐘<br>
+      ※ 實際時間依溫度、電量狀況略有差異
+    </div>
+  </div>
+</div>
+
+<script>
+  const BATTERY_CAPACITY = 61;
+
+  const CONSUMPTION = {
+    single: 11.82,
+    dual: 13.74
+  };
+
+  const DC_FAST_CHARGE = {
+    start: 10,
+    end: 80,
+    timeMinutes: 45
+  };
+
+  const battery = document.getElementById("battery");
+  const target = document.getElementById("target");
+
+  const batteryText = document.getElementById("batteryText");
+  const targetText = document.getElementById("targetText");
+  const rangeResult = document.getElementById("rangeResult");
+  const chargeResult = document.getElementById("chargeResult");
+
+  function getMotorType() {
+    return document.querySelector('input[name="motor"]:checked').value;
+  }
+
+  function safeNumber(value, fallback = 0) {
+    const num = parseFloat(value);
+    return isNaN(num) ? fallback : num;
+  }
+
+  function update() {
+    const current = safeNumber(battery.value, 50);
+    const targetValue = safeNumber(target.value, 80);
+
+    batteryText.textContent = current + "%";
+    targetText.textContent = targetValue + "%";
+
+    /* ===== 續航 ===== */
+    const consumption = CONSUMPTION[getMotorType()];
+    const usableEnergy = BATTERY_CAPACITY * (current / 100);
+    const range = usableEnergy / (consumption / 100);
+    rangeResult.textContent =
+      isFinite(range) ? Math.round(range) + " km" : "—";
+
+    /* ===== DC 快充 ===== */
+    let minutes = 0;
+
+    if (current < 10 && targetValue <= 10) {
+      chargeResult.textContent = "—";
+      return;
+    }
+
+    // 10–80%
+    if (current < 80 && targetValue > 10) {
+      const start = Math.max(current, 10);
+      const end = Math.min(targetValue, 80);
+      if (end > start) {
+        const ratio = (end - start) / (DC_FAST_CHARGE.end - DC_FAST_CHARGE.start);
+        minutes += ratio * DC_FAST_CHARGE.timeMinutes;
+      }
+    }
+
+    // 80–100%
+    if (targetValue > 80 && current < targetValue) {
+      const energy =
+        BATTERY_CAPACITY * ((targetValue - Math.max(current, 80)) / 100);
+      minutes += (energy / 30) * 60;
+    }
+
+    if (!isFinite(minutes) || minutes <= 0) {
+      chargeResult.textContent = "—";
+      return;
+    }
+
+    const h = Math.floor(minutes / 60);
+    const m = Math.round(minutes % 60);
+
+    chargeResult.textContent =
+      h > 0 ? `${h} 小時 ${m} 分` : `${m} 分鐘`;
+  }
+
+  document.querySelectorAll("input").forEach(el =>
+    el.addEventListener("input", update)
+  );
+
+  update();
+</script>
+
+</body>
+</html>
